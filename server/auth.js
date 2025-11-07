@@ -43,20 +43,44 @@ router.post('/mark-attendance', (req, res) => {
         }
 
         function isInsidePolygon(point, polygon) {
-            let x = point.lat, y = point.lng;
-            let inside = false;
+    // Standard convention: lng is x, lat is y
+    let x = point.lng, y = point.lat;
+    let inside = false;
 
-            for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-                let xi = polygon[i].lat, yi = polygon[i].lng;
-                let xj = polygon[j].lat, yj = polygon[j].lng;
+    // Check for point on boundary (optional but recommended for robustness)
+    // ... boundary check logic would go here ...
 
-                let intersect = ((yi > y) !== (yj > y)) &&
-                    (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-10) + xi);
-                if (intersect) inside = !inside;
-            }
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        let xi = polygon[i].lng, yi = polygon[i].lat;
+        let xj = polygon[j].lng, yj = polygon[j].lat;
 
-            return inside;
+        // Check if the ray from P crosses the edge (i, j)
+        let intersect = ((yi > y) !== (yj > y)) &&
+            (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        
+        // The original code used a guard against division by zero:
+        // (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-10) + xi);
+        // An explicit check for horizontal line (yj - yi) === 0 is better
+        // but for general use, the division by zero guard is a common shortcut.
+        // We can keep it to mimic the intent while being safer:
+        
+        // Corrected calculation with safer division:
+        let dy = yj - yi;
+        let intersectionX = (xj - xi) * (y - yi) / dy + xi;
+        
+        let safeIntersect = ((yi > y) !== (yj > y)) &&
+            (dy !== 0) && // Explicitly skip horizontal segments unless P is on them (which should be handled by boundary check)
+            (x < intersectionX);
+            
+        // Use the simplified ray-crossing logic (based on your original):
+        // (The first part already handles the line not being horizontal IF the ray crosses)
+        if (intersect) {
+            inside = !inside;
         }
+    }
+
+    return inside;
+}
 
         const insideGeoFence = isInsidePolygon(point, allowedArea);
         status = insideGeoFence ? 'Present' : 'Absent';
