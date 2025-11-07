@@ -42,45 +42,48 @@ router.post('/mark-attendance', (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid classroom ID or area not defined' });
         }
 
-        function isInsidePolygon(point, polygon) {
-    // Standard convention: lng is x, lat is y
-    let x = point.lng, y = point.lat;
-    let inside = false;
+        // Returns true if point is strictly inside polygon OR on its edge.
+// polygon: array of {lat: number, lng: number}
+function isInsidePolygon(point, polygon) {
+  if (!Array.isArray(polygon) || polygon.length < 3) return false;
 
-    // Check for point on boundary (optional but recommended for robustness)
-    // ... boundary check logic would go here ...
+  // Use conventional coordinates: x = lng, y = lat
+  const px = Number(point.lng), py = Number(point.lat);
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return false;
 
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-        let xi = polygon[i].lng, yi = polygon[i].lat;
-        let xj = polygon[j].lng, yj = polygon[j].lat;
+  // helper: check if point is on segment ab
+  function pointOnSegment(ax, ay, bx, by, x, y, eps = 1e-9) {
+    // cross product ~ 0 ?
+    const cross = (x - ax) * (by - ay) - (y - ay) * (bx - ax);
+    if (Math.abs(cross) > eps) return false;
+    // within bounding box?
+    const dot = (x - ax) * (x - bx) + (y - ay) * (y - by);
+    return dot <= eps;
+  }
 
-        // Check if the ray from P crosses the edge (i, j)
-        let intersect = ((yi > y) !== (yj > y)) &&
-            (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-        
-        // The original code used a guard against division by zero:
-        // (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-10) + xi);
-        // An explicit check for horizontal line (yj - yi) === 0 is better
-        // but for general use, the division by zero guard is a common shortcut.
-        // We can keep it to mimic the intent while being safer:
-        
-        // Corrected calculation with safer division:
-        let dy = yj - yi;
-        let intersectionX = (xj - xi) * (y - yi) / dy + xi;
-        
-        let safeIntersect = ((yi > y) !== (yj > y)) &&
-            (dy !== 0) && // Explicitly skip horizontal segments unless P is on them (which should be handled by boundary check)
-            (x < intersectionX);
-            
-        // Use the simplified ray-crossing logic (based on your original):
-        // (The first part already handles the line not being horizontal IF the ray crosses)
-        if (intersect) {
-            inside = !inside;
-        }
-    }
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const vi = polygon[i], vj = polygon[j];
+    const xi = Number(vi.lng), yi = Number(vi.lat);
+    const xj = Number(vj.lng), yj = Number(vj.lat);
 
-    return inside;
+    // reject malformed vertex values
+    if (!Number.isFinite(xi) || !Number.isFinite(yi) ||
+        !Number.isFinite(xj) || !Number.isFinite(yj)) continue;
+
+    // Check if point is exactly on edge (treat as inside)
+    if (pointOnSegment(xi, yi, xj, yj, px, py)) return true;
+
+    // Ray-casting test: does edge cross horizontal ray to the right of point?
+    const intersects = ((yi > py) !== (yj > py)) &&
+      (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
 }
+
 
         const insideGeoFence = isInsidePolygon(point, allowedArea);
         status = insideGeoFence ? 'Present' : 'Absent';
